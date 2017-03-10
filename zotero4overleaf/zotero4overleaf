@@ -1,0 +1,134 @@
+#!/bin/bash
+
+## This script inspired by and borrows from Zotpicknix (https://github.com/emmareisz/zotpicknix)
+## Originally written to make citations easier in Overleaf (https://www.overleaf.com/)
+## Commands might be system-specific... #YMMV
+
+usage() {
+  cat <<EOF
+usage: ${0##*/} [OPTION]
+
+Options:
+    -h            Print this help message
+    -r            Delete settings file in ~/.config/zotero4overleaf.conf
+    -c [command]  Once-off command type, either 'latex' or 'pandoc'
+    -t            Toggle between 'latex' and 'pandoc' in saved config.
+    
+If 'OPTION' is unspecified, ${0##*/} will run normally.
+
+EOF
+}
+
+while getopts "hrc:t" opt
+  do
+    case $opt in
+      h) 
+        usage
+        exit 0
+        ;;
+      r)
+        if test -e $HOME/.config/zotero4overleaf.conf; then 
+          rm $HOME/.config/zotero4overleaf.conf
+          echo "Config file deleted. Time for a fresh start."
+        else echo "No config file found. Exiting without doing anything!"
+        fi
+        exit
+        ;;
+      c) 
+        TYPE_CMD=$OPTARG
+	    ;;
+      t)
+        if ! test -e $HOME/.config/zotero4overleaf.conf ; then 
+		      echo "No config file found. Nothing to toggle!"
+		      exit 1
+        fi
+        TYPE_ORIG=$(sed -n 3p $HOME/.config/zotero4overleaf.conf)
+        if [ "$TYPE_ORIG" == "pandoc" ] ; then
+          TYPE_CMD="latex"
+        elif [ "$TYPE_ORIG" == "latex" ] ; then
+          TYPE_CMD="pandoc"
+        fi
+        sed -i -e "s/$TYPE_ORIG/$TYPE_CMD/g" $HOME/.config/zotero4overleaf.conf
+        notify-send "Default citation type changed to $TYPE_CMD"
+        ;;
+      \?)
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+## Set up the configuration file
+# - ask what command is used to launch Zotero (and put it in a file in home called ".zotero4overleaf.conf"
+# - ask what citation string to use and store it in the same file
+
+if  ! test -e $HOME/.config/zotero4overleaf.conf ; then 
+  zenity --list \
+    --radiolist \
+    --title="Please enter the command you use to run Zotero" \
+    --column="Selection" --column="command" --column="Description" \
+      TRUE firefox "Zotero Firefox addon" \
+      FALSE zotero "Zotero Standalone" > $HOME/.config/zotero4overleaf.conf;
+  zenity --entry --title="How should we cite?" \
+    --text="Please enter your preferred latex citation string (Hint: usually \"cite\", \"autocite\", etc.)" \
+    --entry-text="cite" >> $HOME/.config/zotero4overleaf.conf;
+  zenity --list \
+    --radiolist \
+    --title="What is your default citation type? Change this option with -t on the command line." \
+    --column="Selection" --column="Citation Type" --column="Description" \
+      TRUE latex "LaTeX format" \
+      FALSE pandoc "pandoc format" >> $HOME/.config/zotero4overleaf.conf;
+fi
+
+ZOT_CMD=$(sed -n 1p $HOME/.config/zotero4overleaf.conf)
+if [ -z "$TYPE_CMD" ]; then TYPE_CMD=$(sed -n 3p $HOME/.config/zotero4overleaf.conf); fi
+if [ "$TYPE_CMD" != "pandoc" ] && [ "$TYPE_CMD" != "latex" ] ; then
+  echo "For now, latex and pandoc are the only supported arguments."; exit 1
+fi
+
+## URL format to be used (see https://zotplus.github.io/better-bibtex/cayw.html#diy)
+if [ "$TYPE_CMD" == "pandoc" ] ; then
+  CAYW_URL="http://localhost:23119/better-bibtex/cayw?format=$TYPE_CMD"
+elif [ "$TYPE_CMD" == "latex" ] ; then
+  CITE_CMD=$(sed -n 2p $HOME/.config/zotero4overleaf.conf)
+  CAYW_URL="http://localhost:23119/better-bibtex/cayw?format=$TYPE_CMD&command=$CITE_CMD"; 
+fi
+
+## Check that Zotero with Better Bibtex is running.
+
+BBT_status=$(curl 'http://localhost:23119/better-bibtex/cayw?probe=probe')
+
+## If running correctly, show the citation picker and use xdotool to type the citation
+
+if [ "$BBT_status" == "ready" ]  2>/dev/null; then
+  notify-send "Accessing Zotero picker..."
+  citation=$(curl $CAYW_URL)
+  sleep 1
+  xdotool type --delay 40 "$citation"
+  exit 0;
+
+## If not running:
+# - get xdotool to identify the active window
+# - launch Zotero (wait 10 seconds) <- this might be too long, adjust if needed
+# - get xdotool to pull up the original window 
+# - show the citation picker and use xdotool to type the citation
+
+elif [ -z "$BBT_status" ]; then
+	activewin=$(xdotool getactivewindow)
+	notify-send "Launching Zotero"	
+	exec "$ZOT_CMD"&
+	sleep 10
+	xdotool windowactivate "$activewin"
+	notify-send "Accessing Zotero picker..."
+	citation=$(curl $CAYW_URL)
+	sleep 1
+	xdotool type --delay 40 "$citation"
+	exit 4;
+
+## If all else fails, take zotpicknix author's advice!
+
+elif [ "$BBT_status" == "No endpoint found" ] 2>/dev/null; then
+	notify-send "Better BibTeX cannot find your library. Ensure only one Zotero instance is open. If so, reinstall Better BibTeX."
+else
+	notify-send "Unknown error in Better BibTex. Please restart Zotero and try again."
+fi
