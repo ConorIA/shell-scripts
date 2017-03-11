@@ -1,0 +1,158 @@
+#!/bin/bash
+
+usage() {
+  cat <<EOF
+usage: ${0##*/} [OPTION]
+
+Options:
+    -h            Print this help message
+    -r            Delete settings file in ~/.config/autotype4pass.conf
+    -c            Delete log files in ~/.cache/autotype4pass.log
+    
+If 'OPTION' is unspecified, ${0##*/} will run normally.
+
+EOF
+}
+
+while getopts "hrc" opt
+  do
+    case $opt in
+      h) 
+        usage
+        exit 0
+        ;;
+      r)
+        if test -e $HOME/.config/autotype4pass.conf; then 
+          rm $HOME/.config/autotype4pass.conf
+          echo "Config file deleted. Time for a fresh start."
+        else echo "No config file found. Exiting without doing anything!"
+        fi
+        exit
+        ;;
+      c) 
+        if test -e $HOME/.cache/autotype4pass.log; then 
+          rm $HOME/.cache/autotype4pass.log
+          echo "Log file deleted. Nothing is cached!"
+        else echo "No log file found. Exiting without doing anything!"
+        fi
+        exit
+        ;;
+      \?)
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+## Set up the configuration file
+# - ask whether we should rename files that whose window titles don't match
+# - ask whether we should log the url matches that we found
+# - ask whether to automatically perform git operations
+
+set -e
+
+if  ! test -e $HOME/.config/autotype4pass.conf ; then 
+  zenity  --list  --text "Please choose your configuration options" \
+    --checklist  --column "Pick" --column "options" \
+    FALSE "Automatically rename entries based on window title" \
+    FALSE "Cache the results of URL searches to make subsequent searches faster" \
+    FALSE "Automatically perform git commands" \
+    --separator="\n" > $HOME/.config/autotype4pass.conf
+fi
+
+renconf=$(cat $HOME/.config/autotype4pass.conf | grep -c "Automatically rename entries based on window title")
+cchconf=$(cat $HOME/.config/autotype4pass.conf | grep -c "Cache the results of URL searches to make subsequent searches faster")
+gitconf=$(cat $HOME/.config/autotype4pass.conf | grep -c "Automatically perform git commands")
+
+if [[ "$gitconf" == "1" ]]; then
+  pass git pull
+fi
+
+activewin=$(xdotool getactivewindow)
+windowname=$(xdotool getwindowname $activewin | sed -e "s/\//_/g")
+
+for browser in "Mozilla Firefox" "Chromium"; do
+  if [[ "$windowname" == *" - $browser" ]]; then
+    windowname="${windowname% - $browser}"
+  fi
+done
+
+for symbol in "|" "'" "~" ">"; do
+  if [[ "$windowname" == *"$symbol"* ]]; then
+    windowname=$(echo "$windowname" | sed "s/\//_/g;s/$symbol/_/g")
+  fi
+done
+
+notify-send "Password for $windowname"
+
+entry=$(pass find "$windowname" | sed '1d' | tr '\n' ' ' | sed 's/     └── /\//g')
+
+if [[ "$entry" == "" ]] || [[ $(echo ${#entry}) -gt 70 ]]; then
+  notify-send "No good results. Trying url."
+  
+  xdotool windowactivate $activewin
+  xdotool key --delay 100 "Control_L+l" "Control_L+a" "Control_L+c" 
+  xdotool click 1
+
+  url=$(xclip -o)
+
+  if [[ "$cchconf" == "1" ]] && test -e $HOME/.cache/autotype4pass.log; then
+    entry=$(grep -o "$url .*" $HOME/.cache/autotype4pass.log | cut -f2- -d" ")
+  fi
+
+  if [[ "$entry" == "" ]] || [[ $(echo ${#entry}) -gt 70 ]]; then
+    notify-send "Searching for entry. Sit tight!" "In the meantime, make sure your cursor is in the username box."
+
+    entry=$(pass grep "$url" 2>/dev/null | head -1 | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
+    entry=${entry%:}
+
+    if [[ "$entry" == "" ]] || [[ $(echo ${#entry}) -gt 70 ]]; then
+      notify-send "Sorry, I couldn't find a good entry! Quitting."
+      exit 1;
+    fi
+
+    if [[ $cchconf == 1 ]]; then
+      if  ! test -e $HOME/.cache/autotype4pass.log ; then
+        echo "$windowname $url $entry" > $HOME/.cache/autotype4pass.log;
+      else
+        echo "$windowname $url $entry" >> $HOME/.cache/autotype4pass.log;
+      fi
+    fi
+  fi
+
+else
+  entry=${entry#└── }
+  entry=${entry% }
+  entry=$(echo $entry | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
+fi
+
+if [[ "$renconf" == "1" ]]; then
+  entname=$(echo $entry | sed -e 's/^.*\///')
+  if [[ "$entname" != "$windowname" ]]; then
+    category="${entry%$entname}"
+    pass mv "$entry" "$category$windowname"
+    entry="$category$windowname"
+    if [[ "$cchconf" == "1" ]]; then
+      line=$(grep -n "$windowname $url" $HOME/.cache/autotype4pass.log | cut -f1 -d:)
+      urles=$(echo $url | sed -e 's/\//\\\//g')
+      categoryes=$(echo $category | sed -e 's/\//\\\//g')
+      sed -i "${line}s/.*/${windowname} ${urles} ${categoryes}${windowname}/" "$HOME/.cache/autotype4pass.log"
+    fi
+  fi
+  if [[ "$gitconf" == "1" ]]; then
+    pass git push
+  fi
+fi
+
+username=$(pass "$entry" | grep "login:" | sed 's/^login: //')
+password=$(pass "$entry" | sed -n '1{p;q}')
+
+if [[ "$username" == "" ]]; then
+  autotype="$password"
+else
+  autotype="$username	$password"
+fi
+
+xdotool windowactivate "$activewin"
+xdotool type --delay 40 "$autotype"
+xdotool key Return
