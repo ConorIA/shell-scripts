@@ -71,7 +71,7 @@ fi
 activewin=$(xdotool getactivewindow)
 windowname=$(xdotool getwindowname $activewin | sed -e "s/\//_/g")
 
-for browser in "Mozilla Firefox" "Chromium"; do
+for browser in "Mozilla Firefox" "Chromium" "QupZilla"; do
   if [[ "$windowname" == *" - $browser" ]]; then
     windowname="${windowname% - $browser}"
   fi
