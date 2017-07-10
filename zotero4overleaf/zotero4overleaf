@@ -11,8 +11,8 @@ usage: ${0##*/} [OPTION]
 Options:
     -h            Print this help message
     -r            Delete settings file in ~/.config/zotero4overleaf.conf
-    -c [command]  Once-off command type, either 'latex' or 'pandoc'
-    -t            Toggle between 'latex' and 'pandoc' in saved config.
+    -c [command]  Once-off command type, one of 'latex', 'pandoc', or 'scannable-cite'
+    -t            Toggle between the three command types and save in the config
     
 If 'OPTION' is unspecified, ${0##*/} will run normally.
 
@@ -43,13 +43,16 @@ while getopts "hrc:t" opt
 		      exit 1
         fi
         TYPE_ORIG=$(sed -n 3p $HOME/.config/zotero4overleaf.conf)
-        if [ "$TYPE_ORIG" == "pandoc" ] ; then
-          TYPE_CMD="latex"
-        elif [ "$TYPE_ORIG" == "latex" ] ; then
+        if [ "$TYPE_ORIG" == "latex" ] ; then
           TYPE_CMD="pandoc"
+        elif [ "$TYPE_ORIG" == "pandoc" ] ; then
+          TYPE_CMD="scannable-cite"
+        elif [ "$TYPE_ORIG" == "scannable-cite" ] ; then
+          TYPE_CMD="latex"
         fi
         sed -i -e "s/$TYPE_ORIG/$TYPE_CMD/g" $HOME/.config/zotero4overleaf.conf
-        notify-send "Default citation type changed to $TYPE_CMD"
+        notify-send "Citation type changed to $TYPE_CMD"
+        exit 0
         ;;
       \?)
         usage
@@ -82,16 +85,16 @@ fi
 
 ZOT_CMD=$(sed -n 1p $HOME/.config/zotero4overleaf.conf)
 if [ -z "$TYPE_CMD" ]; then TYPE_CMD=$(sed -n 3p $HOME/.config/zotero4overleaf.conf); fi
-if [ "$TYPE_CMD" != "pandoc" ] && [ "$TYPE_CMD" != "latex" ] ; then
-  echo "For now, latex and pandoc are the only supported arguments."; exit 1
+if [ "$TYPE_CMD" != "latex" ] && [ "$TYPE_CMD" != "pandoc" ] && [ "$TYPE_CMD" != "scannable-cite" ] ; then
+  echo "For now, latex, pandoc, and scannable-cite are the only supported commands."; exit 1
 fi
 
 ## URL format to be used (see https://zotplus.github.io/better-bibtex/cayw.html#diy)
-if [ "$TYPE_CMD" == "pandoc" ] ; then
+if [ "$TYPE_CMD" == "pandoc" ] || [ "$TYPE_CMD" == "scannable-cite" ] ; then
   CAYW_URL="http://localhost:23119/better-bibtex/cayw?format=$TYPE_CMD"
 elif [ "$TYPE_CMD" == "latex" ] ; then
   CITE_CMD=$(sed -n 2p $HOME/.config/zotero4overleaf.conf)
-  CAYW_URL="http://localhost:23119/better-bibtex/cayw?format=$TYPE_CMD&command=$CITE_CMD"; 
+  CAYW_URL="http://localhost:23119/better-bibtex/cayw?format=$TYPE_CMD&command=$CITE_CMD";  
 fi
 
 ## Check that Zotero with Better Bibtex is running.

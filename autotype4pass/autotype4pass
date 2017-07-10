@@ -83,6 +83,10 @@ for symbol in "|" "'" "~" ">"; do
   fi
 done
 
+if [[ $(echo ${#windowname}) -gt 40 ]]; then
+  windowname=${windowname:0:40}
+fi
+
 notify-send "Password for $windowname"
 
 entry=$(pass find "$windowname" | sed '1d' | tr '\n' ' ' | sed 's/     └── /\//g')
@@ -147,12 +151,10 @@ fi
 username=$(pass "$entry" | grep "login:" | sed 's/^login: //')
 password=$(pass "$entry" | sed -n '1{p;q}')
 
-if [[ "$username" == "" ]]; then
-  autotype="$password"
-else
-  autotype="$username	$password"
-fi
-
 xdotool windowactivate "$activewin"
-xdotool type --delay 40 "$autotype"
+if [[ "$username" != "" ]]; then
+  xdotool type --delay 40 "$username"
+  xdotool key Tab
+fi
+xdotool type --delay 40 "$password"
 xdotool key Return
