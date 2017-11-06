@@ -29,8 +29,8 @@ while getopts "hrc:t" opt
       r)
         if test -e $HOME/.config/zotero4overleaf.conf; then 
           rm $HOME/.config/zotero4overleaf.conf
-          echo "Config file deleted. Time for a fresh start."
-        else echo "No config file found. Exiting without doing anything!"
+          notify-send -a "zotero4overleaf" "Config file deleted. Time for a fresh start."
+        else notify-send -a "zotero4overleaf" "No config file found. Exiting without doing anything!"
         fi
         exit
         ;;
@@ -39,7 +39,7 @@ while getopts "hrc:t" opt
 	    ;;
       t)
         if ! test -e $HOME/.config/zotero4overleaf.conf ; then 
-		      echo "No config file found. Nothing to toggle!"
+		      notify-send -a "zotero4overleaf" "No config file found. Nothing to toggle!"
 		      exit 1
         fi
         TYPE_ORIG=$(sed -n 3p $HOME/.config/zotero4overleaf.conf)
@@ -51,7 +51,7 @@ while getopts "hrc:t" opt
           TYPE_CMD="latex"
         fi
         sed -i -e "s/$TYPE_ORIG/$TYPE_CMD/g" $HOME/.config/zotero4overleaf.conf
-        notify-send "Citation type changed to $TYPE_CMD"
+        notify-send -a "zotero4overleaf"  "Citation type changed to $TYPE_CMD"
         exit 0
         ;;
       \?)
@@ -60,33 +60,43 @@ while getopts "hrc:t" opt
         ;;
     esac
   done
+  
+command -v xdotool >/dev/null 2>&1 || { notify-send -a "zotero4overleaf" "xdotool is required, but doesn't seem to be installed.  Aborting."; exit 1; }
 
 ## Set up the configuration file
 # - ask what command is used to launch Zotero (and put it in a file in home called ".zotero4overleaf.conf"
 # - ask what citation string to use and store it in the same file
 
 if  ! test -e $HOME/.config/zotero4overleaf.conf ; then 
-  zenity --list \
-    --radiolist \
-    --title="Please enter the command you use to run Zotero" \
-    --column="Selection" --column="command" --column="Description" \
-      TRUE firefox "Zotero Firefox addon" \
-      FALSE zotero "Zotero Standalone" > $HOME/.config/zotero4overleaf.conf;
-  zenity --entry --title="How should we cite?" \
-    --text="Please enter your preferred latex citation string (Hint: usually \"cite\", \"autocite\", etc.)" \
-    --entry-text="cite" >> $HOME/.config/zotero4overleaf.conf;
-  zenity --list \
-    --radiolist \
-    --title="What is your default citation type? Change this option with -t on the command line." \
-    --column="Selection" --column="Citation Type" --column="Description" \
-      TRUE latex "LaTeX format" \
-      FALSE pandoc "pandoc format" >> $HOME/.config/zotero4overleaf.conf;
+  if ! command -v zenity >/dev/null 2>&1 ; then
+    notify-send -a "zotero4overleaf" "zenity doesn't seem to be installed, assuming Zotero Standalone with LaTeX citations."
+    echo "zotero" > $HOME/.config/zotero4overleaf.conf
+    echo "cite" >> $HOME/.config/zotero4overleaf.conf
+    echo "latex" >> $HOME/.config/zotero4overleaf.conf
+  else
+    zenity --list \
+      --radiolist \
+      --title="Please enter the command you use to run Zotero" \
+      --column="Selection" --column="command" --column="Description" \
+        FALSE firefox "Zotero Firefox addon (< v5.0)" \
+        TRUE zotero "Zotero Standalone" > $HOME/.config/zotero4overleaf.conf;
+    zenity --entry --title="How should we cite?" \
+      --text="Please enter your preferred latex citation string (Hint: usually \"cite\", \"autocite\", etc.)" \
+      --entry-text="cite" >> $HOME/.config/zotero4overleaf.conf;
+    zenity --list \
+      --radiolist \
+      --title="What is your default citation type? Change this option with -t on the command line." \
+      --column="Selection" --column="Citation Type" --column="Description" \
+        TRUE latex "LaTeX format" \
+        FALSE pandoc "pandoc format" \
+        FALSE scannable-cite "scannable-cite format" >> $HOME/.config/zotero4overleaf.conf;
+  fi
 fi
 
 ZOT_CMD=$(sed -n 1p $HOME/.config/zotero4overleaf.conf)
 if [ -z "$TYPE_CMD" ]; then TYPE_CMD=$(sed -n 3p $HOME/.config/zotero4overleaf.conf); fi
 if [ "$TYPE_CMD" != "latex" ] && [ "$TYPE_CMD" != "pandoc" ] && [ "$TYPE_CMD" != "scannable-cite" ] ; then
-  echo "For now, latex, pandoc, and scannable-cite are the only supported commands."; exit 1
+  notify-send -a "zotero4overleaf" "For now, latex, pandoc, and scannable-cite are the only supported commands."; exit 1
 fi
 
 ## URL format to be used (see https://zotplus.github.io/better-bibtex/cayw.html#diy)
@@ -104,7 +114,7 @@ BBT_status=$(curl 'http://localhost:23119/better-bibtex/cayw?probe=probe')
 ## If running correctly, show the citation picker and use xdotool to type the citation
 
 if [ "$BBT_status" == "ready" ]  2>/dev/null; then
-  notify-send "Accessing Zotero picker..."
+  notify-send -a "zotero4overleaf" "Accessing Zotero picker..."
   citation=$(curl $CAYW_URL)
   sleep 1
   xdotool type --delay 40 "$citation"
@@ -118,11 +128,11 @@ if [ "$BBT_status" == "ready" ]  2>/dev/null; then
 
 elif [ -z "$BBT_status" ]; then
 	activewin=$(xdotool getactivewindow)
-	notify-send "Launching Zotero"	
+	notify-send -a "zotero4overleaf" "Launching Zotero"	
 	exec "$ZOT_CMD"&
 	sleep 10
 	xdotool windowactivate "$activewin"
-	notify-send "Accessing Zotero picker..."
+	notify-send -a "zotero4overleaf" "Accessing Zotero picker..."
 	citation=$(curl $CAYW_URL)
 	sleep 1
 	xdotool type --delay 40 "$citation"
@@ -131,7 +141,7 @@ elif [ -z "$BBT_status" ]; then
 ## If all else fails, take zotpicknix author's advice!
 
 elif [ "$BBT_status" == "No endpoint found" ] 2>/dev/null; then
-	notify-send "Better BibTeX cannot find your library. Ensure only one Zotero instance is open. If so, reinstall Better BibTeX."
+	notify-send -a "zotero4overleaf" "Better BibTeX cannot find your library. Ensure only one Zotero instance is open. If so, reinstall Better BibTeX."
 else
-	notify-send "Unknown error in Better BibTex. Please restart Zotero and try again."
+	notify-send -a "zotero4overleaf" "Unknown error in Better BibTex. Please restart Zotero and try again."
 fi
