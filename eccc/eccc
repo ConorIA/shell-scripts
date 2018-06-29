@@ -1,0 +1,164 @@
+# /bin/env bash
+# Author:   Conor I. Anderson <conor@conr.ca>
+# Date:     2018-06-29
+# Last mod: 2018-06-29
+
+usage() {
+  cat <<EOF
+usage: ${0##*/} [options]
+
+Facilitates download of hourly, daily, or monthly climate data from Environment and Climate Change Canada
+
+Options:
+    -y [years]     Years to download, express multiple years as a range: e.g. 1998:2008
+                   A single year can also be passed: e.g. 1998 (does not apply to monthly data)
+    -m [months]    Months to download, expressed as a range: e.g. 1:12
+                   If no month is given, 1:12 will be used. (only applies to hourly data)
+    -t [timeframe] Timeframe to download. 1 is hourly; 2 is daily; 3 is monthly (defaults to 2)
+    -s [station]   Station code to download. Pass the argument multiple times for more than one
+                   station: e.g. -s 5051 -s 31688
+    -x [skip]      Optional; the number of lines to be cropped form the top of each file.
+                   e.g. for monthly: 18; for daily: 24; for hourly: 15. Add 1 to daily and hourly
+                   for data that is newer than May 2018 (an additional metadata field was added)
+    -g             Optional; if specified, we will attempt to glue individual CSV files into a single file.
+                   This will not work if the skip option, above, is not specified.
+    -h             Show this help text
+    
+Examples:
+${0##*/} -y 1981:2010 -s 5051 -x 24 -g # creates a single daily csv file for Toronto daily data
+${0##*/} -y 1981:2010 -m 6:8 -t 1 -s 5051 # downloads hourly data for the summer months from 1981 to 2010 at Toronto
+    
+For more details, see: 
+ftp://client_climate@ftp.tor.ec.gc.ca/Pub/Get_More_Data_Plus_de_donnees/Readme.txt
+
+EOF
+}
+
+# Parses the options given
+while getopts "y:m:t:s:x:gh" opt
+  do
+    case $opt in
+      h) 
+        usage
+        exit 0
+        ;;
+      y) 
+        YEARS="${OPTARG}"
+        ;;
+      m) 
+        MONTHS="${OPTARG}"
+        ;;
+      t) 
+        TIMEFRAME="${OPTARG}"
+        ;;
+      s) 
+        STATIONS+=("${OPTARG}")
+        ;;
+      x) 
+        SKIP="${OPTARG}"
+        ;;
+      g)
+        GLUE="true"
+        ;;
+      \?)
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+# Checks for missing arguments
+if [ -z "$STATIONS" ]; then
+  echo "ERROR: No station specified."
+  usage
+  exit 1
+fi
+
+if [ -z "$TIMEFRAME" ]; then
+  TIMEFRAME=2
+fi
+
+if [ -z "$MONTHS" ]; then
+  MONTHS="1:12"
+fi
+
+if [ -z "$YEARS" ] && [ "$TIMEFRAME" != "3" ]; then
+  echo "ERROR: Years not specified."
+  usage
+  exit 1
+fi
+
+# Turn months and years into sequences
+if [ "$TIMEFRAME" = "1" ]; then
+  MONTHS=`seq ${MONTHS%:*} ${MONTHS#*:}`
+else
+  MONTHS=6 # Don't use a sequence for monthly
+fi
+if [ "$TIMEFRAME" = "3" ]; then
+  YEARS=1989
+else
+  if [[ "${YEARS}" =~ ^[0-9]{4}:[0-9]{4}$ ]]; then 
+    YEARS=`seq ${YEARS%:*} ${YEARS#*:}`
+  elif [[ ! "${YEARS}" =~ ^[0-9]{4}$ ]]; then
+    echo "ERROR: Invalid format for years."
+    usage
+    exit 1
+  fi
+fi
+
+if [ "${GLUE}" = "true" ]; then
+  if [ -z "${SKIP}" ]; then
+    echo "-g option passed but no skip specified. Ignoring."
+  else 
+    FRSTFL="true"
+  fi
+fi
+
+# Do the downloading.
+for year in ${YEARS}; do
+  for month in ${MONTHS}; do
+    for station in "${STATIONS[@]}"; do
+      
+      case "$TIMEFRAME" in
+        1)
+          period="hourly"
+          filemth="-$(printf "%02d" ${month})"
+          fileyr="-${year}"
+          ;;
+        2)
+          period="daily"
+          filemth=""
+          fileyr="-${year}"
+          ;;
+        3)
+          period="monthly"
+          filemth=""
+          fileyr=""
+          ;;
+      esac
+      
+      
+      wget --content-disposition \
+        "http://climate.weather.gc.ca/climate_data/bulk_data_e.html?"`
+        `"format=csv&stationID=${station}&Year=${year}&Month=${month}&Day=14"`
+        `"&timeframe=${TIMEFRAME}&submit=Download+Data" -O \
+        "${station}-${period}${fileyr}${filemth}.csv";
+        
+      if [ ! -z "$SKIP" ]; then     
+        sed -i -e 1,${SKIP}d "${station}-${period}${fileyr}${filemth}.csv"
+            
+        if [ "${GLUE}" = "true" ]; then
+          if [ "${FRSTFL}" = "true" ]; then
+            cat "${station}-${period}${fileyr}${filemth}.csv" > "${station}-${period}.csv"
+            SKIP=$((SKIP+1))
+            FRSTFL=false
+          else
+            cat "${station}-${period}${fileyr}${filemth}.csv" >> "${station}-${period}.csv"
+          fi
+          rm "${station}-${period}${fileyr}${filemth}.csv"
+        fi
+      fi
+      
+    done;
+  done;
+done
