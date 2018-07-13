@@ -1,7 +1,7 @@
 # /bin/env bash
 # Author:   Conor I. Anderson <conor@conr.ca>
 # Date:     2018-06-29
-# Last mod: 2018-06-29
+# Last mod: 2018-07-13
 
 usage() {
   cat <<EOF
@@ -106,18 +106,20 @@ else
   fi
 fi
 
-if [ "${GLUE}" = "true" ]; then
-  if [ -z "${SKIP}" ]; then
-    echo "-g option passed but no skip specified. Ignoring."
-  else 
-    FRSTFL="true"
-  fi
-fi
-
 # Do the downloading.
-for year in ${YEARS}; do
-  for month in ${MONTHS}; do
-    for station in "${STATIONS[@]}"; do
+for station in "${STATIONS[@]}"; do
+
+  if [ "${GLUE}" = "true" ]; then
+    if [ -z "${SKIP}" ]; then
+      echo "-g option passed but no skip specified. Ignoring."
+    else 
+      if [ -n "${FRSTFL}" ]; then SKIP=$((SKIP-1)); fi
+      FRSTFL="true"
+    fi
+  fi
+
+  for year in ${YEARS}; do
+    for month in ${MONTHS}; do
       
       case "$TIMEFRAME" in
         1)
