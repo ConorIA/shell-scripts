@@ -1,7 +1,14 @@
 # /bin/env bash
 # Author:   Conor I. Anderson <conor@conr.ca>
 # Date:     2018-06-29
-# Last mod: 2018-06-29
+# Last mod: 2018-11-09
+#
+# Changelog:
+#
+# 2018-11-09:
+#
+# Use curl instead of wget to reduce dependencies on Mac
+# Use awk to automatically guess the skip if it is not specified with -g
 
 usage() {
   cat <<EOF
@@ -10,23 +17,26 @@ usage: ${0##*/} [options]
 Facilitates download of hourly, daily, or monthly climate data from Environment and Climate Change Canada
 
 Options:
+    -s [station]   Station code to download. Pass the argument multiple times for more than one
+                   station: e.g. -s 5051 -s 31688
     -y [years]     Years to download, express multiple years as a range: e.g. 1998:2008
                    A single year can also be passed: e.g. 1998 (does not apply to monthly data)
     -m [months]    Months to download, expressed as a range: e.g. 1:12
                    If no month is given, 1:12 will be used. (only applies to hourly data)
     -t [timeframe] Timeframe to download. 1 is hourly; 2 is daily; 3 is monthly (defaults to 2)
-    -s [station]   Station code to download. Pass the argument multiple times for more than one
-                   station: e.g. -s 5051 -s 31688
-    -x [skip]      Optional; the number of lines to be cropped form the top of each file.
-                   e.g. for monthly: 18; for daily: 24; for hourly: 15. Add 1 to daily and hourly
-                   for data that is newer than May 2018 (an additional metadata field was added)
     -g             Optional; if specified, we will attempt to glue individual CSV files into a single file.
                    This will not work if the skip option, above, is not specified.
     -h             Show this help text
-    
+
+Deprecated options: These options should no longer be neccesary and may be removed in a future update
+
+    -x [skip]      Optional; a fixed number of lines to be cropped from the top of each file.
+                   e.g. for monthly: 18; for daily: 24; for hourly: 15. Add 1 to daily and hourly
+                   for data that is newer than May 2018 (an additional metadata field was added).
+
 Examples:
-${0##*/} -y 1981:2010 -s 5051 -x 24 -g # creates a single daily csv file for Toronto daily data
-${0##*/} -y 1981:2010 -m 6:8 -t 1 -s 5051 # downloads hourly data for the summer months from 1981 to 2010 at Toronto
+${0##*/} -s 5051 -y 1981:2010 -g # creates a single daily .csv file for Toronto daily data
+${0##*/} -s 5051 -y 1981:2010 -m 6:8 -t 1  # downloads hourly data for the summer months from 1981 to 2010 at Toronto
     
 For more details, see: 
 ftp://client_climate@ftp.tor.ec.gc.ca/Pub/Get_More_Data_Plus_de_donnees/Readme.txt
@@ -107,10 +117,9 @@ else
 fi
 
 if [ "${GLUE}" = "true" ]; then
+  FRSTFL="true"
   if [ -z "${SKIP}" ]; then
-    echo "-g option passed but no skip specified. Ignoring."
-  else 
-    FRSTFL="true"
+    GUESSSKIP="true"
   fi
 fi
 
@@ -137,13 +146,22 @@ for year in ${YEARS}; do
           ;;
       esac
       
-      
-      wget --content-disposition \
+
+      curl --silent \
         "http://climate.weather.gc.ca/climate_data/bulk_data_e.html?"`
         `"format=csv&stationID=${station}&Year=${year}&Month=${month}&Day=14"`
-        `"&timeframe=${TIMEFRAME}&submit=Download+Data" -O \
+        `"&timeframe=${TIMEFRAME}&submit=Download+Data" -o \
         "${station}-${period}${fileyr}${filemth}.csv";
-        
+      
+      if [ "${GUESSSKIP}" = "true" ]; then
+        SKIP=$(awk 'length > m { m = length; a = NR } END { print a }' \
+                 "${station}-${period}${fileyr}${filemth}.csv")
+        if [ "${FRSTFL}" = "true" ]; then
+          SKIP=$((SKIP-1))
+        fi
+        echo $SKIP
+      fi
+      
       if [ ! -z "$SKIP" ]; then     
         sed -i -e 1,${SKIP}d "${station}-${period}${fileyr}${filemth}.csv"
             
