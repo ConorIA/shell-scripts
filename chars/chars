@@ -1,0 +1,11 @@
+#!/bin/bash
+
+function check(){
+  echo ✓ | xclip
+}
+
+function ex(){
+  echo ✗ | xclip
+}
+
+$1

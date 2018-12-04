@@ -116,17 +116,18 @@ else
   fi
 fi
 
-if [ "${GLUE}" = "true" ]; then
+# Do the downloading.
+for station in "${STATIONS[@]}"; do
+  
+  if [ "${GLUE}" = "true" ]; then
   FRSTFL="true"
   if [ -z "${SKIP}" ]; then
     GUESSSKIP="true"
+    fi
   fi
-fi
 
-# Do the downloading.
-for year in ${YEARS}; do
-  for month in ${MONTHS}; do
-    for station in "${STATIONS[@]}"; do
+  for year in ${YEARS}; do
+    for month in ${MONTHS}; do
       
       case "$TIMEFRAME" in
         1)
@@ -159,7 +160,6 @@ for year in ${YEARS}; do
         if [ "${FRSTFL}" = "true" ]; then
           SKIP=$((SKIP-1))
         fi
-        echo $SKIP
       fi
       
       if [ ! -z "$SKIP" ]; then     
