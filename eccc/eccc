@@ -1,14 +1,15 @@
 # /bin/env bash
 # Author:   Conor I. Anderson <conor@conr.ca>
 # Date:     2018-06-29
-# Last mod: 2018-11-09
+# Last mod: 2019-01-01
 #
 # Changelog:
+# 
+# 2019-01-01: Be a good netizen: Sleep 0.5 secs between curl requests.
 #
-# 2018-11-09:
-#
-# Use curl instead of wget to reduce dependencies on Mac
-# Use awk to automatically guess the skip if it is not specified with -g
+# 2018-11-09: Use curl instead of wget to reduce dependencies on Mac.
+#             Use awk to automatically guess the skip if it is not specified
+#               with -g. Deprecate -x.
 
 usage() {
   cat <<EOF
@@ -176,6 +177,7 @@ for station in "${STATIONS[@]}"; do
           rm "${station}-${period}${fileyr}${filemth}.csv"
         fi
       fi
+      sleep 0.5
       
     done;
   done;
