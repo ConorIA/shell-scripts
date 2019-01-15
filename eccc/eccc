@@ -5,10 +5,11 @@
 #
 # Changelog:
 # 
+# 2019-01-15: Exit 1 when there is an error downloading a given file. 
 # 2019-01-14: Fallback to wget if cURL is not available.
 # 2019-01-01: Be a good netizen: Sleep 0.5 secs between curl requests.
 #
-# 2018-11-09: Use curl instead of wget to reduce dependencies on Mac.
+# 2018-11-09: Use curl instead of wget to reduce dependencies on Mac and Linux.
 #             Use awk to automatically guess the skip if it is not specified
 #               with -g. Deprecate -x.
 
@@ -16,7 +17,7 @@ usage() {
   cat <<EOF
 usage: ${0##*/} [options]
 
-Facilitates download of hourly, daily, or monthly climate data from Environment and Climate Change Canada
+Facilitates download of hourly, daily, or monthly climate data from Environment and Climate Change Canada.
 
 Options:
     -s [station]   Station code to download. Pass the argument multiple times for more than one
@@ -163,12 +164,14 @@ for station in "${STATIONS[@]}"; do
             `"&timeframe=${TIMEFRAME}&submit=Download+Data"
       OUT="${station}-${period}${fileyr}${filemth}.csv"
       
+      ERRMSG="There was an error downloading that file. This is probably an issue with the upstream Environment Canada Server. We can't continue! Try again later."
+      
       echo "Downloading ${OUT} via ${CMD}"
       
       if [ "${CMD}" = "curl" ]; then
-        curl --silent "${URL}" -o "${OUT}"
+        curl --silent --show-error --fail "${URL}" -o "${OUT}" || { echo >&2 "${ERRMSG}"; rm -v ${OUT}; exit 1; }
       elif [ "${CMD}" = "wget" ]; then
-        wget --content-disposition "${URL}" -O "${OUT}"
+        wget --content-disposition "${URL}" -O "${OUT}" || { echo >&2 "${ERRMSG}"; rm -v ${OUT}; exit 1; }
       else
         # This should be impossible.
         echo "We got an unexpected download command. Please report the error!"
